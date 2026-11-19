@@ -1,3 +1,7 @@
+# DealerFlow deployment: existing API/static-web container + managed PostgreSQL.
+# rid_1 retains the vms-app service identity and runs apps/api/server.js.
+# nginx exposes port 8080; /api/* and /health proxy to the private API on 4174.
+# rid_2 provisions a separate PostgreSQL database for each environment.
 revolte:
   version: '1'
   project: Dealerflow
@@ -13,11 +17,14 @@ revolte:
             health: /health
             port: 8080
             loadBalancerMode: shared
+            # Preview uses the platform-managed database's private connection values.
+            # The application explicitly disables SSL for this private-network connection.
             variables:
               NODE_ENV: production
               API_PORT: '4174'
               DATA_DIR: /data
               DEMO_PASSWORD: '#{DEMO_PASSWORD}'
+              # Leave DATABASE_URL unset: the API uses these PG* variables directly.
               PGHOST: '#{db.dbUrl}'
               PGPORT: '#{db.dbPort}'
               PGUSER: '#{db.dbUsername}'
@@ -35,6 +42,9 @@ revolte:
             cpu: 2
             memory: 1
             storage: 30
+    # Configure PGHOST, PGPORT, PGUSER, PGPASSWORD and PGDATABASE in each
+    # non-preview environment's settings, referencing that environment's db service.
+    # Variables are deliberately declared only for preview in this manifest.
     qa:
       branch: qa
       services:
