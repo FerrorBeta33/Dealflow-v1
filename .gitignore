@@ -1,0 +1,17 @@
+node_modules/
+dist/
+coverage/
+.data/
+.data-showcase/
+.env
+.env.*
+!.env.example
+*.log
+*.tsbuildinfo
+core
+core.*
+*.heapsnapshot
+report.*.json
+isolate-*.log
+.revolte/artifacts/
+.revolte/runtime/
