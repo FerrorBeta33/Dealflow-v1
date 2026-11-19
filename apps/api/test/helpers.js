@@ -2,15 +2,14 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { once } from 'node:events';
-import { openDatabase } from '../db.js';
+import { temporaryDatabase } from './postgres.js';
 import { seed } from '../seed.js';
 import { createApp } from '../server.js';
-
 export async function fixture(t) {
   const root = await mkdtemp(resolve('.data/test-'));
-  const db = openDatabase(resolve(root, 'test.sqlite'));
+  const db = await temporaryDatabase(t);
   const password = randomBytes(20).toString('hex');
-  seed(db, password);
+  await seed(db, password);
   const server = createApp(db, resolve(root, 'uploads')).listen(0, '127.0.0.1');
   await once(server, 'listening');
   const url = `http://127.0.0.1:${server.address().port}/api`;
@@ -42,7 +41,6 @@ export async function fixture(t) {
   t.after(async () => {
     server.closeAllConnections();
     await new Promise((done) => server.close(done));
-    db.close();
     await rm(root, { recursive: true, force: true });
   });
   return { db, api, tokens, password, root, url };

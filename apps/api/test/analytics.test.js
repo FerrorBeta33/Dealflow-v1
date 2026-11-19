@@ -2,10 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import { fixture, newOrder, documentForm } from './helpers.js';
-
 await mkdir('.data', { recursive: true });
 const metric = (data, id) => data.metrics.find((item) => item.id === id);
-
 test('Command Center: all read APIs require auth, preserve read policies and reject invalid input', async (t) => {
   const { api } = await fixture(t);
   for (const path of [
@@ -42,14 +40,14 @@ test('Command Center: all read APIs require auth, preserve read policies and rej
     403,
   );
 });
-
 test('Command Center: aggregates reconcile, snapshot ignores period, and drilldowns include every page', async (t) => {
   const { api, db } = await fixture(t);
   const summary = (await api('/analytics/summary')).data;
   assert.equal(summary.calculationVersion, 'dealerflow.cc.1');
   assert.equal(
     metric(summary, 'available').value,
-    db.prepare("SELECT COUNT(*) AS count FROM vehicles WHERE status='available'").get().count,
+    (await db.prepare("SELECT COUNT(*) AS count FROM vehicles WHERE status='available'").get())
+      .count,
   );
   const old = (
     await api('/analytics/summary?from=2020-01-01T00:00:00.000Z&to=2020-01-02T00:00:00.000Z')
@@ -73,11 +71,10 @@ test('Command Center: aggregates reconcile, snapshot ignores period, and drilldo
   const scoped = (await api('/analytics/records?metric=available&branch_id=1&model_id=1')).data;
   assert.ok(scoped.items.every((item) => item.branch_id === 1 && item.model_id === 1));
   assert.equal((await api('/analytics/records?metric=available&branch_id=9999')).data.total, 0);
-  const before = db.prepare('SELECT COUNT(*) AS count FROM orders').get().count;
+  const before = (await db.prepare('SELECT COUNT(*) AS count FROM orders').get()).count;
   await api('/analytics/search?q=%27%20OR%201%3D1--');
-  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM orders').get().count, before);
+  assert.equal((await db.prepare('SELECT COUNT(*) AS count FROM orders').get()).count, before);
 });
-
 test('Command Center: pending money, combined/document blockers, verified duplicates and delivery reconcile', async (t) => {
   const { api, db } = await fixture(t);
   const { order, vehicle } = await newOrder(api);
@@ -137,7 +134,10 @@ test('Command Center: pending money, combined/document blockers, verified duplic
   const after = (await api('/analytics/summary')).data;
   assert.equal(metric(after, 'openOrders').value, metric(before, 'openOrders').value - 1);
   assert.equal(metric(after, 'ready').value, metric(before, 'ready').value);
-  assert.equal(db.prepare('SELECT status FROM vehicles WHERE id=?').get(vehicle.id).status, 'sold');
+  assert.equal(
+    (await db.prepare('SELECT status FROM vehicles WHERE id=?').get(vehicle.id)).status,
+    'sold',
+  );
   assert.ok(
     !(await api('/analytics/exceptions')).data.items.some((item) => item.order_id === order.id),
   );

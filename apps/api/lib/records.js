@@ -1,7 +1,6 @@
 import { listQuery } from './validation.js';
 import { insert, row, update, requireCondition } from './errors.js';
 import { deliveryReadiness } from './workflow.js';
-
 const modelSelect = `SELECT m.*, m.brand || ' ' || m.name || ' · ' || m.variant AS label FROM vehicle_models m`;
 const vehicleSelect = `SELECT v.*, m.brand, m.name, m.variant, m.fuel, m.transmission, m.base_price,
   m.brand || ' ' || m.name || ' · ' || m.variant AS label, br.name AS branch FROM vehicles v
@@ -72,14 +71,14 @@ const configs = {
     price: 'o.total',
   },
 };
-export function listRecords(db, entity, query) {
+export async function listRecords(db, entity, query) {
   const input = listQuery.parse(query);
   const config = configs[entity];
   const args = [];
   const conditions = [];
   if (input.q) {
     conditions.push(
-      `(${config.search.map((column) => `${column} LIKE ? ESCAPE '\\'`).join(' OR ')})`,
+      `(${config.search.map((column) => `${column} ILIKE ? ESCAPE '\\'`).join(' OR ')})`,
     );
     const term = `%${input.q.replace(/[\\%_]/g, '\\$&')}%`;
     args.push(...config.search.map(() => term));
@@ -91,16 +90,16 @@ export function listRecords(db, entity, query) {
     }
   }
   const where = conditions.length ? ` WHERE ${conditions.join(' AND ')}` : '';
-  const total = db
-    .prepare(`SELECT COUNT(*) AS count FROM (${config.sql}${where})`)
-    .get(...args).count;
+  const total = (
+    await db.prepare(`SELECT COUNT(*) AS count FROM (${config.sql}${where})`).get(...args)
+  ).count;
   const sorts = {
     newest: `${config.alias}.id DESC`,
     oldest: `${config.alias}.id ASC`,
     name: `${config.name} ASC, ${config.alias}.id ASC`,
     price: `${config.price || config.name} ASC, ${config.alias}.id ASC`,
   };
-  const items = db
+  const items = await db
     .prepare(`${config.sql}${where} ORDER BY ${sorts[input.sort]} LIMIT ? OFFSET ?`)
     .all(...args, input.limit, (input.page - 1) * input.limit);
   return {
@@ -111,35 +110,35 @@ export function listRecords(db, entity, query) {
     limit: input.limit,
   };
 }
-export function recordDetail(db, entity, id) {
+export async function recordDetail(db, entity, id) {
   const config = configs[entity];
-  const found = db.prepare(`${config.sql} WHERE ${config.alias}.id = ?`).get(id);
+  const found = await db.prepare(`${config.sql} WHERE ${config.alias}.id = ?`).get(id);
   requireCondition(found, 'Record not found', 404);
   if (entity === 'orders') {
-    found.readiness = deliveryReadiness(db, found);
-    found.invoice = db.prepare('SELECT * FROM invoices WHERE order_id = ?').get(id);
+    found.readiness = await deliveryReadiness(db, found);
+    found.invoice = await db.prepare('SELECT * FROM invoices WHERE order_id = ?').get(id);
   }
   return found;
 }
-export function saveCatalog(db, entity, id, input) {
-  return db
-    .transaction(() => {
+export async function saveCatalog(db, entity, id, input) {
+  return await db
+    .transaction(async () => {
       const table = entity === 'models' ? 'vehicle_models' : entity;
       if (entity === 'vehicles') {
         if (id)
           requireCondition(
-            ['available', 'in_transit'].includes(row(db, table, id).status),
+            ['available', 'in_transit'].includes((await row(db, table, id)).status),
             'Reserved or sold vehicles cannot be edited',
           );
-        row(db, 'vehicle_models', input.model_id);
-        row(db, 'branches', input.branch_id);
+        await row(db, 'vehicle_models', input.model_id);
+        await row(db, 'branches', input.branch_id);
       }
-      return id ? update(db, table, id, input) : insert(db, table, input);
+      return id ? await update(db, table, id, input) : await insert(db, table, input);
     })
     .immediate();
 }
-export function dashboard(db) {
-  const metrics = db
+export async function dashboard(db) {
+  const metrics = await db
     .prepare(
       `SELECT
     (SELECT COUNT(*) FROM vehicles WHERE status = 'available') AS available,
@@ -148,13 +147,13 @@ export function dashboard(db) {
     (SELECT COALESCE(SUM(amount),0) FROM payment_requests WHERE status = 'paid') AS received`,
     )
     .get();
-  const stock = db
+  const stock = await db
     .prepare(
       `SELECT br.name AS branch, v.status, COUNT(*) AS count FROM vehicles v
     JOIN branches br ON br.id = v.branch_id GROUP BY br.id,v.status ORDER BY br.name,v.status LIMIT 100`,
     )
     .all();
-  const events = db
+  const events = await db
     .prepare(
       `SELECT * FROM (
     SELECT 'Booking ' || status AS title, 'Booking #' || id AS detail, updated_at AS happened_at FROM bookings

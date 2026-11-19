@@ -43,6 +43,9 @@ export function ExceptionRow({
   const missing = [!item.identity ? 'identity' : '', !item.address ? 'address' : '']
     .filter(Boolean)
     .join(' + ');
+  const financialNote =
+    (item.outstanding || 0) > 0 ? `${money(item.outstanding || 0)} outstanding. ` : '';
+  const documentNote = missing ? `Verify ${missing}.` : '';
   const icon =
     item.type === 'ready'
       ? 'ready'
@@ -67,7 +70,10 @@ export function ExceptionRow({
             {item.order_id ? (
               <button
                 onClick={open}
-                className="min-h-11 rounded text-left text-sm font-semibold hover:text-primary focus-visible:outline-2 focus-visible:outline-ring"
+                className={
+                  'min-h-11 rounded text-left text-sm font-semibold hover:text-primary ' +
+                  'focus-visible:outline-2 focus-visible:outline-ring'
+                }
               >
                 Order #{item.order_id}{' '}
                 <span className="font-normal text-muted-foreground">· {item.customer}</span>
@@ -87,7 +93,7 @@ export function ExceptionRow({
               ? 'Financial and mandatory document gates satisfied.'
               : item.type === 'aging'
                 ? 'Available VIN · record age, not days-on-lot.'
-                : `${(item.outstanding || 0) > 0 ? `${money(item.outstanding || 0)} outstanding. ` : ''}${missing ? `Verify ${missing}.` : ''}`}
+                : `${financialNote}${documentNote}`}
           </p>
           {item.pending > 0 && (
             <p className="mt-1 text-xs text-warning">

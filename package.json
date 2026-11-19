@@ -16,7 +16,10 @@
     "assets:vehicles": "node scripts/generate-vehicle-art.js",
     "type-check": "tsc --noEmit -p apps/web/tsconfig.json",
     "lint": "eslint .",
-    "test": "node --test apps/api/test/*.test.js && vitest run --config apps/web/vite.config.ts",
+    "test": "node scripts/test-postgres.js",
+    "test:api": "node scripts/test-postgres.js api",
+    "test:web": "node scripts/test-postgres.js web",
+    "db:migrate:sqlite": "node apps/api/migrate-sqlite.js",
     "build": "npm run build --workspace apps/web",
     "format": "prettier --write . --ignore-path .gitignore"
   },
@@ -25,10 +28,12 @@
     "express": "latest",
     "helmet": "latest",
     "multer": "latest",
+    "pg": "8.23.1",
     "zod": "latest"
   },
   "devDependencies": {
     "@eslint/js": "latest",
+    "embedded-postgres": "18.7.0-beta.19",
     "eslint": "latest",
     "globals": "latest",
     "prettier": "latest",

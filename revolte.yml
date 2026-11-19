@@ -1,0 +1,114 @@
+revolte:
+  version: '1'
+  project: Dealerflow
+  appName: 'vms app'
+  env:
+    preview:
+      services:
+        rid_1:
+          name: vms-app
+          type: WEB_SERVICE
+          entryPoint: apps/api/server.js
+          properties:
+            health: /health
+            port: 8080
+            loadBalancerMode: shared
+            variables:
+              NODE_ENV: production
+              API_PORT: '4174'
+              DATA_DIR: /data
+              DEMO_PASSWORD: '#{DEMO_PASSWORD}'
+              PGHOST: '#{db.dbUrl}'
+              PGPORT: '#{db.dbPort}'
+              PGUSER: '#{db.dbUsername}'
+              PGPASSWORD: '#{db.dbPassword}'
+              PGDATABASE: '#{db.dbName}'
+          specifications:
+            cpu: 2
+            memory: 2
+            storage: 30
+        rid_2:
+          name: db
+          type: DATABASE
+          specifications:
+            engine: postgres
+            cpu: 2
+            memory: 1
+            storage: 30
+    qa:
+      branch: qa
+      services:
+        rid_1:
+          name: vms-app
+          type: WEB_SERVICE
+          entryPoint: apps/api/server.js
+          properties:
+            health: /health
+            port: 8080
+            loadBalancerMode: shared
+          specifications:
+            cpu: 2
+            memory: 2
+            storage: 30
+        rid_2:
+          name: db
+          type: DATABASE
+          specifications:
+            engine: postgres
+            cpu: 2
+            memory: 1
+            storage: 30
+    staging:
+      branch: staging
+      services:
+        rid_1:
+          name: vms-app
+          type: WEB_SERVICE
+          entryPoint: apps/api/server.js
+          properties:
+            health: /health
+            port: 8080
+            loadBalancerMode: shared
+          specifications:
+            cpu: 2
+            memory: 2
+            storage: 30
+        rid_2:
+          name: db
+          type: DATABASE
+          specifications:
+            engine: postgres
+            cpu: 2
+            memory: 1
+            storage: 30
+    # Scaffold only: private /data uploads still require durable shared storage.
+    # PostgreSQL does not make local document files safe across app replicas.
+    # Resolve upload storage before enabling production deployment/scaling.
+    # The platform may also reject shared load balancers in production.
+    production:
+      branch: main
+      services:
+        rid_1:
+          name: vms-app
+          type: WEB_SERVICE
+          entryPoint: apps/api/server.js
+          properties:
+            health: /health
+            port: 8080
+            loadBalancerMode: shared
+          specifications:
+            cpu: 2
+            memory: 2
+            storage: 50
+            autoScaling:
+              replica:
+                min: 1
+                max: 3
+        rid_2:
+          name: db
+          type: DATABASE
+          specifications:
+            engine: postgres
+            cpu: 2
+            memory: 1
+            storage: 30

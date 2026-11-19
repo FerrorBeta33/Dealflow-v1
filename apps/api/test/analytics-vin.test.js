@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { fixture } from './helpers.js';
 test('VIN lineage is scoped, read-only and authenticated for all existing employee roles', async (t) => {
   const { api, db } = await fixture(t);
-  const before = db.prepare('SELECT total_changes() AS count').get().count;
+  const before = (await db.fingerprint()).count;
   assert.equal((await api('/analytics/vins/1', { token: '' })).status, 401);
   for (const role of ['admin', 'manager', 'sales', 'inventory']) {
     const response = await api('/analytics/vins/2', { role });
@@ -21,13 +21,15 @@ test('VIN lineage is scoped, read-only and authenticated for all existing employ
   assert.equal(stock.status, 200);
   assert.equal(
     stock.data.total,
-    db
-      .prepare("SELECT COUNT(*) AS count FROM vehicles WHERE status='reserved' AND branch_id=2")
-      .get().count,
+    (
+      await db
+        .prepare("SELECT COUNT(*) AS count FROM vehicles WHERE status='reserved' AND branch_id=2")
+        .get()
+    ).count,
   );
   assert.ok(stock.data.items.every((item) => item.status === 'reserved' && item.branch_id === 2));
   const paged = await api('/analytics/records?metric=stock&limit=2&page=999');
   assert.equal(paged.data.page, paged.data.pages);
   assert.ok(paged.data.items.length <= 2);
-  assert.equal(db.prepare('SELECT total_changes() AS count').get().count, before);
+  assert.equal((await db.fingerprint()).count, before);
 });

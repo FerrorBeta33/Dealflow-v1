@@ -4,15 +4,16 @@ import { mkdir } from 'node:fs/promises';
 import { fixture } from './helpers.js';
 import { seed } from '../seed.js';
 import { hashPassword } from '../lib/auth.js';
-
 await mkdir('.data', { recursive: true });
 test('FR-01: short-domain employee login validates credentials and rejects malformed identifiers', async (t) => {
   const { api, db, password } = await fixture(t);
   const hashed = hashPassword(password);
-  db.prepare(
-    `INSERT INTO employees (name, email, role, salt, password_hash)
+  await db
+    .prepare(
+      `INSERT INTO employees (name, email, role, salt, password_hash)
     VALUES (?, ?, ?, ?, ?)`,
-  ).run('Demo Admin', 'admin@demo', 'admin', hashed.salt, hashed.password_hash);
+    )
+    .run('Demo Admin', 'admin@demo', 'admin', hashed.salt, hashed.password_hash);
   const result = await api('/auth/login', {
     method: 'POST',
     body: { email: 'admin@demo', password },
@@ -62,7 +63,7 @@ test('FR-01: login, hashed sessions, expiry, role denial, logout and unauthentic
     401,
   );
   assert.equal((await api('/auth/me')).data.role, 'admin');
-  const stored = db.prepare('SELECT * FROM sessions LIMIT 1').get();
+  const stored = await db.prepare('SELECT * FROM sessions LIMIT 1').get();
   assert.notEqual(stored.token_hash, tokens.admin);
   assert.ok(stored.expires_at > Date.now() + 9 * 60 * 60 * 1000);
   for (const path of [
@@ -91,7 +92,7 @@ test('FR-01: login, hashed sessions, expiry, role denial, logout and unauthentic
   );
   assert.equal((await api('/auth/logout', { method: 'POST' })).status, 200);
   assert.equal((await api('/auth/me')).status, 401);
-  db.prepare('UPDATE sessions SET expires_at = 0').run();
+  await db.prepare('UPDATE sessions SET expires_at = 0').run();
   assert.equal((await api('/auth/me', { role: 'sales' })).status, 401);
 });
 test('FR-03–05: catalog, stock and customer create/view/search/filter/edit persist with validation', async (t) => {
@@ -125,7 +126,8 @@ test('FR-03–05: catalog, stock and customer create/view/search/filter/edit per
     200,
   );
   assert.equal(
-    db.prepare('SELECT base_price FROM vehicle_models WHERE id = ?').get(model.id).base_price,
+    (await db.prepare('SELECT base_price FROM vehicle_models WHERE id = ?').get(model.id))
+      .base_price,
     190000000,
   );
   const stock = {
@@ -190,13 +192,14 @@ test('FR-03–05: catalog, stock and customer create/view/search/filter/edit per
 });
 test('FR-02/FR-15: seed is non-destructive, dashboard is database-derived and lists are bounded', async (t) => {
   const { api, db, password } = await fixture(t);
-  const before = db.prepare('SELECT COUNT(*) AS count FROM bookings').get().count;
-  assert.equal(seed(db, password), false);
-  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM bookings').get().count, before);
+  const before = (await db.prepare('SELECT COUNT(*) AS count FROM bookings').get()).count;
+  assert.equal(await seed(db, password), false);
+  assert.equal((await db.prepare('SELECT COUNT(*) AS count FROM bookings').get()).count, before);
   const dashboard = (await api('/dashboard')).data;
   assert.equal(
     dashboard.metrics.available,
-    db.prepare("SELECT COUNT(*) AS count FROM vehicles WHERE status = 'available'").get().count,
+    (await db.prepare("SELECT COUNT(*) AS count FROM vehicles WHERE status = 'available'").get())
+      .count,
   );
   assert.equal(dashboard.metrics.received, 5000000);
   assert.ok(dashboard.events.length > 0);

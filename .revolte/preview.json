@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "start": "PATH=\"$PWD/.data/runtime/bin:$PATH\" npm run dev",
+  "start": "PATH=\"$PWD/.data/runtime/bin:$PATH\" sh -c 'node apps/api/bootstrap.js && npm run dev'",
   "port": 4173,
   "install": [
     {
@@ -12,12 +12,15 @@
       "name": "npm dependencies",
       "check": "test -d node_modules && test -f node_modules/.package-lock.json && test package-lock.json -ot node_modules/.package-lock.json",
       "run": "PATH=\"$PWD/.data/runtime/bin:$PATH\" npm ci"
-    },
-    {
-      "name": "SQLite and fictional fixtures",
-      "check": "test -f .data/dealerflow.sqlite",
-      "run": "PATH=\"$PWD/.data/runtime/bin:$PATH\" npm run seed"
     }
   ],
-  "services": []
+  "services": [
+    {
+      "name": "PostgreSQL",
+      "check": "PATH=\"$PWD/.data/runtime/bin:$PATH\" node scripts/local-postgres.js check",
+      "install": "true",
+      "start": "PATH=\"$PWD/.data/runtime/bin:$PATH\" node scripts/local-postgres.js start",
+      "ready": "PATH=\"$PWD/.data/runtime/bin:$PATH\" node scripts/local-postgres.js check"
+    }
+  ]
 }

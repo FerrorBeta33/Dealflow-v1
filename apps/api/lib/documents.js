@@ -2,7 +2,6 @@ import { mkdir, writeFile, unlink } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { insert, row, requireCondition, timestamp } from './errors.js';
-
 const signatures = [
   {
     mime: 'application/pdf',
@@ -41,7 +40,7 @@ export async function uploadDocument(db, root, orderId, type, file, employee) {
     400,
   );
   requireCondition(
-    row(db, 'orders', orderId).status === 'open',
+    (await row(db, 'orders', orderId)).status === 'open',
     'Documents are frozen after delivery',
   );
   await mkdir(root, { recursive: true });
@@ -49,17 +48,19 @@ export async function uploadDocument(db, root, orderId, type, file, employee) {
   const path = resolve(root, storageName);
   await writeFile(path, file.buffer, { flag: 'wx', mode: 0o600 });
   try {
-    return db
-      .transaction(() => {
+    return await db
+      .transaction(async () => {
         requireCondition(
-          row(db, 'orders', orderId).status === 'open',
+          (await row(db, 'orders', orderId)).status === 'open',
           'Documents are frozen after delivery',
         );
         // A replacement invalidates earlier reviews of the same category.
-        db.prepare(
-          "UPDATE documents SET status = 'rejected', note = 'Superseded by a newer upload' WHERE order_id = ? AND type = ?",
-        ).run(orderId, type);
-        return insert(db, 'documents', {
+        await db
+          .prepare(
+            "UPDATE documents SET status = 'rejected', note = 'Superseded by a newer upload' WHERE order_id = ? AND type = ?",
+          )
+          .run(orderId, type);
+        return await insert(db, 'documents', {
           order_id: orderId,
           type,
           filename: file.originalname.replace(/[^a-zA-Z0-9._ -]/g, '_').slice(0, 120),
@@ -75,29 +76,31 @@ export async function uploadDocument(db, root, orderId, type, file, employee) {
     throw error;
   }
 }
-export function reviewDocument(db, id, input, employee) {
-  return db
-    .transaction(() => {
-      const document = row(db, 'documents', id);
+export async function reviewDocument(db, id, input, employee) {
+  return await db
+    .transaction(async () => {
+      const document = await row(db, 'documents', id);
       requireCondition(
-        row(db, 'orders', document.order_id).status === 'open',
+        (await row(db, 'orders', document.order_id)).status === 'open',
         'Documents are frozen after delivery',
       );
-      const latest = db
+      const latest = await db
         .prepare(
           'SELECT id FROM documents WHERE order_id = ? AND type = ? ORDER BY id DESC LIMIT 1',
         )
         .get(document.order_id, document.type);
       requireCondition(latest.id === id, 'Review the latest upload for this document category');
-      db.prepare(
-        `UPDATE documents SET status = ?, note = ?, reviewed_by = ?, reviewed_at = ${timestamp} WHERE id = ?`,
-      ).run(input.status, input.note, employee.id, id);
-      return row(db, 'documents', id);
+      await db
+        .prepare(
+          `UPDATE documents SET status = ?, note = ?, reviewed_by = ?, reviewed_at = ${timestamp} WHERE id = ?`,
+        )
+        .run(input.status, input.note, employee.id, id);
+      return await row(db, 'documents', id);
     })
     .immediate();
 }
-export function orderCollection(db, table, orderId, input) {
-  row(db, 'orders', orderId);
+export async function orderCollection(db, table, orderId, input) {
+  await row(db, 'orders', orderId);
   const { page = 1, limit = 20, status, q = '', type, sort = 'newest' } = input;
   const values = [orderId];
   const conditions = ['order_id = ?'];
@@ -111,20 +114,20 @@ export function orderCollection(db, table, orderId, input) {
   }
   if (q) {
     conditions.push(
-      table === 'documents' ? 'filename LIKE ?' : '(note LIKE ? OR CAST(id AS TEXT) LIKE ?)',
+      table === 'documents' ? 'filename ILIKE ?' : '(note ILIKE ? OR CAST(id AS TEXT) ILIKE ?)',
     );
     values.push(`%${q}%`);
     if (table !== 'documents') values.push(`%${q}%`);
   }
   const where = conditions.join(' AND ');
-  const total = db
-    .prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE ${where}`)
-    .get(...values).count;
+  const total = (
+    await db.prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE ${where}`).get(...values)
+  ).count;
   const fields =
     table === 'documents'
       ? 'id,order_id,type,filename,mime,size,status,note,created_at,reviewed_at'
       : '*';
-  const items = db
+  const items = await db
     .prepare(
       `SELECT ${fields} FROM ${table} WHERE ${where} ORDER BY id ${sort === 'oldest' ? 'ASC' : 'DESC'} LIMIT ? OFFSET ?`,
     )

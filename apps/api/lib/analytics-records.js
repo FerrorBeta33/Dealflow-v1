@@ -11,14 +11,13 @@ import { metricCondition } from './analytics-metrics.js';
 import { metricDefinitions } from '../../../shared/command-center.js';
 import { recordDetail } from './records.js';
 import { requireCondition } from './errors.js';
-
-export function metricRecords(db, input) {
+export async function metricRecords(db, input) {
   const spec = metricCondition(input.metric, input);
   const definition = metricDefinitions.find((metric) => metric.id === input.metric);
   const filters = [spec.where];
   const args = [...spec.args];
   if (input.q) {
-    filters.push("(label LIKE ? ESCAPE '\\' OR vin LIKE ? ESCAPE '\\' OR CAST(id AS TEXT) = ?)");
+    filters.push("(label ILIKE ? ESCAPE '\\' OR vin ILIKE ? ESCAPE '\\' OR CAST(id AS TEXT) = ?)");
     args.push(likeTerm(input.q), likeTerm(input.q), input.q);
   }
   if (input.status && spec.source === 'vehicle_data') {
@@ -26,7 +25,7 @@ export function metricRecords(db, input) {
     args.push(input.status);
   }
   const sql = `${dataCte} SELECT * FROM ${spec.source} data WHERE ${filters.join(' AND ')} ORDER BY id DESC`;
-  const result = paginated(db, sql, args, input);
+  const result = await paginated(db, sql, args, input);
   const payment = spec.source === 'payment_data';
   const entity = payment ? 'payments' : definition.entity;
   return {
@@ -55,15 +54,15 @@ const exceptionSql = `${dataCte}, exceptions AS (
       WHEN outstanding > 0 AND ${missingDocuments} THEN 'combined'
       WHEN outstanding > 0 THEN 'payment' ELSE 'documents' END AS type,
     CASE WHEN ${readyPredicate} THEN 0 WHEN outstanding > 0 THEN 1 ELSE 2 END AS priority,
-    created_at, MAX(CAST(julianday(?) - julianday(created_at) AS INTEGER),0) AS age_days,
+    created_at, GREATEST(FLOOR(EXTRACT(EPOCH FROM (?::timestamptz - created_at))/86400.0)::integer,0) AS age_days,
     '/orders/' || id AS href
   FROM order_data WHERE status = 'open'
   UNION ALL SELECT 'vehicle-' || id, NULL, id, vin, label, NULL, branch, branch_id, model_id,
     0, 0, 0, 0, 'aging', 3, created_at,
-    MAX(CAST(julianday(?) - julianday(created_at) AS INTEGER),0), '/vehicles/' || id
-  FROM vehicle_data WHERE status = 'available' AND julianday(?) - julianday(created_at) >= 30
+    GREATEST(FLOOR(EXTRACT(EPOCH FROM (?::timestamptz - created_at))/86400.0)::integer,0), '/vehicles/' || id
+  FROM vehicle_data WHERE status = 'available' AND (EXTRACT(EPOCH FROM (?::timestamptz - created_at))/86400.0) >= 30
 )`;
-export function exceptions(db, input) {
+export async function exceptions(db, input) {
   const scoped = scope(input);
   const filters = [scoped.sql];
   const args = [input.asOf, input.asOf, input.asOf, ...scoped.args];
@@ -81,37 +80,37 @@ export function exceptions(db, input) {
         : 'priority';
   return {
     ...metadata(input),
-    ...paginated(
+    ...(await paginated(
       db,
       `${exceptionSql} SELECT * FROM exceptions data WHERE ${filters.join(' AND ')} ORDER BY ${order}, id`,
       args,
       input,
-    ),
+    )),
   };
 }
-export function journey(db, id, input) {
+export async function journey(db, id, input) {
   // Existing detail supplies the authoritative balance/readiness and immutable invoice.
-  const order = recordDetail(db, 'orders', id);
-  const lineage = db.prepare(`${dataCte} SELECT * FROM order_data WHERE id = ?`).get(id);
+  const order = await recordDetail(db, 'orders', id);
+  const lineage = await db.prepare(`${dataCte} SELECT * FROM order_data WHERE id = ?`).get(id);
   requireCondition(
     (!input.branch_id || lineage.branch_id === input.branch_id) &&
       (!input.model_id || lineage.model_id === input.model_id),
     'Order is outside the selected scope',
     404,
   );
-  const documents = db
+  const documents = await db
     .prepare(
       `SELECT type, status, COUNT(*) AS count, MAX(reviewed_at) AS reviewed_at
     FROM documents WHERE order_id = ? GROUP BY type,status ORDER BY type,status LIMIT 12`,
     )
     .all(id);
-  const paymentStates = db
+  const paymentStates = await db
     .prepare(
       `SELECT status, COUNT(*) AS count, SUM(amount) AS amount,
     MAX(settled_at) AS last_settled_at FROM payment_requests WHERE order_id = ? GROUP BY status LIMIT 3`,
     )
     .all(id);
-  const latest = db
+  const latest = await db
     .prepare(
       `SELECT MAX(happened_at) AS happened_at FROM (
     SELECT created_at AS happened_at FROM orders WHERE id = ?
@@ -135,15 +134,15 @@ export function journey(db, id, input) {
       order.readiness.address,
   };
 }
-export function vinJourney(db, id, input) {
-  const vehicle = recordDetail(db, 'vehicles', id);
+export async function vinJourney(db, id, input) {
+  const vehicle = await recordDetail(db, 'vehicles', id);
   requireCondition(
     (!input.branch_id || vehicle.branch_id === input.branch_id) &&
       (!input.model_id || vehicle.model_id === input.model_id),
     'VIN is outside the selected scope',
     404,
   );
-  const booking = db
+  const booking = await db
     .prepare(
       `SELECT b.*, c.name AS customer, o.id AS order_id FROM bookings b
     JOIN customers c ON c.id=b.customer_id LEFT JOIN orders o ON o.booking_id=b.id
@@ -152,7 +151,7 @@ export function vinJourney(db, id, input) {
     .get(id);
   return { ...metadata(input), vehicle, booking: booking ?? null };
 }
-export function search(db, input) {
+export async function search(db, input) {
   const scoped = scope(input);
   const term = likeTerm(input.q);
   const sql = `${dataCte}, searchable AS (
@@ -166,11 +165,11 @@ export function search(db, input) {
     UNION ALL SELECT 'models', id, brand || ' ' || name, variant, NULL, NULL, id, '/models/' || id FROM vehicle_models
   ), matches AS (
     SELECT * FROM searchable data WHERE ${scoped.sql}
-      AND (reference LIKE ? ESCAPE '\\' OR label LIKE ? ESCAPE '\\' OR CAST(id AS TEXT) = ?)
+      AND (reference ILIKE ? ESCAPE '\\' OR label ILIKE ? ESCAPE '\\' OR CAST(id AS TEXT) = ?)
     UNION ALL SELECT 'customers', c.id, c.name, 'Customer record', NULL, NULL, NULL, '/customers/' || c.id
-      FROM customers c WHERE c.name LIKE ? ESCAPE '\\' AND (? IS NULL AND ? IS NULL OR EXISTS (
+      FROM customers c WHERE c.name ILIKE ? ESCAPE '\\' AND (?::bigint IS NULL AND ?::bigint IS NULL OR EXISTS (
         SELECT 1 FROM booking_data b WHERE b.customer_id = c.id
-          AND (? IS NULL OR b.branch_id = ?) AND (? IS NULL OR b.model_id = ?)))
+          AND (?::bigint IS NULL OR b.branch_id = ?) AND (?::bigint IS NULL OR b.model_id = ?)))
   ) SELECT *, CASE WHEN reference = ? OR CAST(id AS TEXT) = ? THEN 0 ELSE 1 END AS rank
     FROM matches ORDER BY rank, entity, id LIMIT 20`;
   if (!input.q)
@@ -181,7 +180,7 @@ export function search(db, input) {
     };
   return {
     ...metadata(input),
-    items: db
+    items: await db
       .prepare(sql)
       .all(
         ...scoped.args,

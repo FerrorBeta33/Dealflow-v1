@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { expect, test, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { WidgetState } from './components/command/widget-state';
 import { VehicleImage } from './components/vehicle-image';
@@ -78,9 +78,13 @@ test('side drawers capture focus, close with Escape and restore trigger focus', 
   const trigger = screen.getByRole('button', { name: 'Inspect journey' });
   await user.click(trigger);
   const dialog = screen.getByRole('dialog', { name: 'Journey context' });
+  const title = within(dialog).getByRole('heading', { name: 'Journey context' });
+  expect(title.id).not.toBe('');
+  expect(dialog).toHaveAttribute('aria-labelledby', title.id);
+  expect(dialog).toHaveAccessibleName('Journey context');
   expect(dialog).toHaveAttribute('aria-modal', 'true');
   await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
   await user.keyboard('{Escape}');
-  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(screen.queryByRole('dialog', { name: 'Journey context' })).not.toBeInTheDocument();
   expect(trigger).toHaveFocus();
 });

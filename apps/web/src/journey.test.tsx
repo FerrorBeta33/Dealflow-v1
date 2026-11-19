@@ -9,7 +9,6 @@ import { Buffer } from 'node:buffer';
 import { demoDocument } from '../../../shared/demo-document.js';
 import { AuthProvider } from './lib/auth';
 import { App } from './app';
-
 let context: Awaited<ReturnType<typeof fixture>>;
 const originalFetch = globalThis.fetch;
 let dispose: () => Promise<void>;
@@ -67,7 +66,6 @@ afterAll(async () => {
   vi.unstubAllGlobals();
   await dispose();
 });
-
 test('FR-01–15 React journey: login → add vehicle/customer → booking → order → invoice → payment → documents → delivery', async () => {
   const user = userEvent.setup();
   const client = new QueryClient({
@@ -198,11 +196,10 @@ test('FR-01–15 React journey: login → add vehicle/customer → booking → o
   );
   expect(await screen.findByText(/Delivered on/)).toBeVisible();
   expect(
-    context.db.prepare('SELECT status FROM vehicles WHERE vin = ?').get('MAT12345678901234'),
+    await context.db.prepare('SELECT status FROM vehicles WHERE vin = ?').get('MAT12345678901234'),
   ).toEqual({ status: 'sold' });
   print.mockRestore();
 }, 60000);
-
 test('Customer search/view/edit and pending-payment cancellation are usable through React', async () => {
   const user = userEvent.setup();
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -223,7 +220,7 @@ test('Customer search/view/edit and pending-payment cancellation are usable thro
   await user.type(name, 'Priya Menon');
   await user.click(screen.getByRole('button', { name: 'Save changes' }));
   expect(await screen.findByRole('heading', { name: 'Priya Menon' })).toBeVisible();
-  expect(context.db.prepare('SELECT name FROM customers WHERE id = 2').get()).toEqual({
+  expect(await context.db.prepare('SELECT name FROM customers WHERE id = 2').get()).toEqual({
     name: 'Priya Menon',
   });
   await user.click(screen.getByRole('link', { name: 'Sales orders' }));
@@ -235,7 +232,9 @@ test('Customer search/view/edit and pending-payment cancellation are usable thro
     within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel request #2' }),
   );
   expect(await screen.findByText('cancelled', { exact: true })).toBeVisible();
-  expect(context.db.prepare('SELECT status FROM payment_requests WHERE id = 1').get()).toEqual({
+  expect(
+    await context.db.prepare('SELECT status FROM payment_requests WHERE id = 1').get(),
+  ).toEqual({
     status: 'paid',
   });
   expect((await context.api('/orders/1/documents', { token: '' })).status).toBe(401);

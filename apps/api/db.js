@@ -1,89 +1,134 @@
-import Database from 'better-sqlite3';
-import { mkdirSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { Pool, types } from 'pg';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { readFileSync, existsSync, mkdirSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { placeholders } from './lib/sql.js';
 
 export const dataRoot = resolve(process.env.DATA_DIR || '.data');
-export function openDatabase(filename = resolve(dataRoot, 'dealerflow.sqlite')) {
-  if (filename !== ':memory:') mkdirSync(dirname(filename), { recursive: true });
-  const db = new Database(filename);
-  db.pragma('foreign_keys = ON');
-  db.pragma('busy_timeout = 5000');
-  db.pragma('journal_mode = WAL');
-  if (db.pragma('user_version', { simple: true }) < 1) {
-    db.transaction(() => {
-      db.exec(`
-        CREATE TABLE employees (
-          id INTEGER PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE,
-          role TEXT NOT NULL CHECK(role IN ('sales','inventory','manager','admin')),
-          salt TEXT NOT NULL, password_hash TEXT NOT NULL
-        );
-        CREATE TABLE sessions (
-          token_hash TEXT PRIMARY KEY, employee_id INTEGER NOT NULL REFERENCES employees(id),
-          expires_at INTEGER NOT NULL
-        );
-        CREATE TABLE branches (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, address TEXT NOT NULL);
-        CREATE TABLE vehicle_models (
-          id INTEGER PRIMARY KEY, brand TEXT NOT NULL, name TEXT NOT NULL, variant TEXT NOT NULL,
-          fuel TEXT NOT NULL, transmission TEXT NOT NULL, base_price INTEGER NOT NULL CHECK(base_price > 0),
-          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-        );
-        CREATE TABLE vehicles (
-          id INTEGER PRIMARY KEY, vin TEXT NOT NULL UNIQUE, model_id INTEGER NOT NULL REFERENCES vehicle_models(id),
-          branch_id INTEGER NOT NULL REFERENCES branches(id), color TEXT NOT NULL,
-          status TEXT NOT NULL CHECK(status IN ('available','reserved','in_transit','sold')),
-          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-        );
-        CREATE TABLE customers (
-          id INTEGER PRIMARY KEY, name TEXT NOT NULL, phone TEXT NOT NULL, email TEXT NOT NULL DEFAULT '',
-          address TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-        );
-        CREATE TABLE bookings (
-          id INTEGER PRIMARY KEY, customer_id INTEGER NOT NULL REFERENCES customers(id),
-          vehicle_id INTEGER NOT NULL REFERENCES vehicles(id), employee_id INTEGER NOT NULL REFERENCES employees(id),
-          status TEXT NOT NULL CHECK(status IN ('confirmed','converted','cancelled')),
-          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-          updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-        );
-        CREATE UNIQUE INDEX active_booking_vin ON bookings(vehicle_id) WHERE status IN ('confirmed','converted');
-        CREATE TABLE orders (
-          id INTEGER PRIMARY KEY, booking_id INTEGER NOT NULL UNIQUE REFERENCES bookings(id),
-          base_price INTEGER NOT NULL CHECK(base_price > 0), extras INTEGER NOT NULL CHECK(extras >= 0),
-          tax INTEGER NOT NULL CHECK(tax >= 0), total INTEGER NOT NULL CHECK(total = base_price + extras + tax),
-          status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','delivered')),
-          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-          delivered_at TEXT, delivered_by INTEGER REFERENCES employees(id)
-        );
-        CREATE TABLE invoices (
-          id INTEGER PRIMARY KEY, order_id INTEGER NOT NULL UNIQUE REFERENCES orders(id), reference TEXT NOT NULL UNIQUE,
-          amount INTEGER NOT NULL CHECK(amount > 0),
-          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-        );
-        CREATE TABLE payment_requests (
-          id INTEGER PRIMARY KEY, order_id INTEGER NOT NULL REFERENCES orders(id),
-          amount INTEGER NOT NULL CHECK(amount > 0), status TEXT NOT NULL CHECK(status IN ('pending','paid','cancelled')),
-          note TEXT NOT NULL DEFAULT '', created_by INTEGER NOT NULL REFERENCES employees(id),
-          settled_by INTEGER REFERENCES employees(id),
-          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')), settled_at TEXT, cancelled_at TEXT
-        );
-        CREATE TABLE documents (
-          id INTEGER PRIMARY KEY, order_id INTEGER NOT NULL REFERENCES orders(id),
-          type TEXT NOT NULL CHECK(type IN ('identity','address','insurance','registration')),
-          filename TEXT NOT NULL, storage_name TEXT NOT NULL UNIQUE, mime TEXT NOT NULL, size INTEGER NOT NULL CHECK(size <= 4194304),
-          status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','verified','rejected')),
-          note TEXT NOT NULL DEFAULT '', uploaded_by INTEGER NOT NULL REFERENCES employees(id),
-          reviewed_by INTEGER REFERENCES employees(id), reviewed_at TEXT,
-          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-        );
-        CREATE INDEX vehicles_model ON vehicles(model_id);
-        CREATE INDEX vehicles_branch_status ON vehicles(branch_id,status);
-        CREATE INDEX bookings_customer ON bookings(customer_id);
-        CREATE INDEX bookings_status ON bookings(status);
-        CREATE INDEX payments_order_status ON payment_requests(order_id,status);
-        CREATE INDEX documents_order_type ON documents(order_id,type);
-        CREATE INDEX sessions_expiry ON sessions(expires_at);
-        PRAGMA user_version = 1;
-      `);
+export const tableNames = [
+  'employees',
+  'sessions',
+  'branches',
+  'vehicle_models',
+  'vehicles',
+  'customers',
+  'bookings',
+  'orders',
+  'invoices',
+  'payment_requests',
+  'documents',
+];
+const numeric = (value) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || (Number.isInteger(parsed) && !Number.isSafeInteger(parsed)))
+    throw new RangeError('Database number is outside the supported safe range');
+  return parsed;
+};
+types.setTypeParser(20, numeric);
+types.setTypeParser(1700, numeric);
+types.setTypeParser(1082, (value) => value);
+types.setTypeParser(1184, (value) => new Date(value).toISOString());
+
+export function connectionOptions() {
+  if (process.env.DATABASE_URL) return { connectionString: process.env.DATABASE_URL, ssl: false };
+  if (process.env.PGHOST) return { ssl: false };
+  const file = resolve('.data/postgres/credentials.json');
+  if (process.env.NODE_ENV !== 'production' && existsSync(file))
+    return { ...JSON.parse(readFileSync(file, 'utf8')), ssl: false };
+  throw new Error('Configure DATABASE_URL or PGHOST for PostgreSQL; SQLite fallback is disabled');
+}
+
+export async function openDatabase(options = {}) {
+  if (typeof options !== 'object') throw new Error('Use PostgreSQL connection/schema options');
+  const schema = options.schema || 'public';
+  if (!/^[a-z][a-z0-9_]*$/.test(schema)) throw new Error('Invalid database schema');
+  const pool = new Pool({
+    ...connectionOptions(),
+    ...options,
+    ssl: false,
+    max: 8,
+    connectionTimeoutMillis: 5000,
+    options: `-c search_path=${schema} -c timezone=UTC`,
+  });
+  pool.on('error', (error) => console.error('PostgreSQL pool connection error:', error.code));
+  const context = new AsyncLocalStorage();
+  const query = (sql, args = []) => (context.getStore() || pool).query(placeholders(sql), args);
+  const db = {
+    pool,
+    schema,
+    query,
+    inTransaction: () => Boolean(context.getStore()),
+    prepare(sql) {
+      return {
+        async get(...args) {
+          return (await query(sql, args)).rows[0];
+        },
+        async all(...args) {
+          return (await query(sql, args)).rows;
+        },
+        async run(...args) {
+          const text =
+            /^\s*INSERT\b/i.test(sql) && !/\bRETURNING\b/i.test(sql)
+              ? sql.replace(/;\s*$/, '') + ' RETURNING *'
+              : sql;
+          const result = await query(text, args);
+          return { changes: result.rowCount, lastInsertRowid: result.rows[0]?.id };
+        },
+      };
+    },
+    transaction(callback, { readOnly = false } = {}) {
+      const execute = async () => {
+        if (context.getStore()) return callback();
+        const client = await pool.connect();
+        try {
+          await client.query(
+            readOnly ? 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY' : 'BEGIN',
+          );
+          const result = await context.run(client, callback);
+          await client.query('COMMIT');
+          return result;
+        } catch (error) {
+          await client.query('ROLLBACK');
+          throw error;
+        } finally {
+          client.release();
+        }
+      };
+      execute.immediate = execute;
+      return execute;
+    },
+    async fingerprint() {
+      const rows = tableNames.map(
+        (table) => `SELECT row_to_json(t)::text AS value FROM ${table} t`,
+      );
+      return (
+        await query(
+          `SELECT md5(COALESCE(string_agg(value,'' ORDER BY value),'')) AS count FROM (${rows.join(' UNION ALL ')}) data`,
+        )
+      ).rows[0];
+    },
+    async close() {
+      if (options.dropOnClose) await query(`DROP SCHEMA ${schema} CASCADE`);
+      await pool.end();
+    },
+  };
+  try {
+    await db.transaction(async () => {
+      await query('SELECT pg_advisory_xact_lock(hashtext($1))', ['dealerflow-schema-' + schema]);
+      await query(`CREATE SCHEMA IF NOT EXISTS ${schema}`);
+      await query(
+        'CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())',
+      );
+      const applied = await query('SELECT version FROM schema_migrations WHERE version = 1');
+      if (!applied.rowCount) {
+        await query(readFileSync(resolve('apps/api/migrations/001-initial.sql'), 'utf8'));
+        await query('INSERT INTO schema_migrations(version) VALUES (1)');
+      }
     })();
+    mkdirSync(dataRoot, { recursive: true });
+    return db;
+  } catch (error) {
+    await pool.end();
+    throw error;
   }
-  return db;
 }

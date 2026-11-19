@@ -5,7 +5,6 @@ import {
   calculationVersion,
 } from '../../../shared/command-center.js';
 import { vehicleStatuses } from '../../../shared/domain.js';
-
 const positiveId = z.coerce.number().int().positive().safe();
 export const analyticsQuery = z
   .object({
@@ -80,12 +79,12 @@ export function metadata(input) {
       'Current stock/open work ignore period. No physical received date or inventory snapshots. No conversion cohort rule.',
   };
 }
-export function paginated(db, sql, args, input) {
-  return db.transaction(() => {
-    const total = db.prepare(`SELECT COUNT(*) AS count FROM (${sql})`).get(...args).count;
+export async function paginated(db, sql, args, input) {
+  return await db.transaction(async () => {
+    const total = (await db.prepare(`SELECT COUNT(*) AS count FROM (${sql})`).get(...args)).count;
     const pages = Math.max(1, Math.ceil(total / input.limit));
     const page = Math.min(input.page, pages);
-    const items = db
+    const items = await db
       .prepare(`${sql} LIMIT ? OFFSET ?`)
       .all(...args, input.limit, (page - 1) * input.limit);
     return { items, total, page, pages, limit: input.limit };
@@ -115,7 +114,7 @@ export const dataCte = `WITH
       v.status AS vehicle_status, v.color, v.brand, v.name, v.variant,
       i.reference AS invoice_reference, i.amount AS invoice_amount,
       COALESCE(s.paid,0) AS paid, COALESCE(s.pending,0) AS pending,
-      MAX(o.total - COALESCE(s.paid,0),0) AS outstanding,
+      GREATEST(o.total - COALESCE(s.paid,0),0) AS outstanding,
       COALESCE(d.identity,0) AS identity, COALESCE(d.address,0) AS address
     FROM orders o JOIN booking_data b ON b.id = o.booking_id
     JOIN vehicle_data v ON v.id = b.vehicle_id

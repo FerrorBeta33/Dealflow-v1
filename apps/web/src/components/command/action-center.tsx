@@ -37,11 +37,15 @@ export function ActionCenter({
           value={params.get('attention') || 'all'}
           onChange={(event) => actions.update({ attention: event.target.value, action_page: '' })}
         >
-          {exceptionTypes.map((type) => (
-            <option key={type} value={type}>
-              {type === 'all' ? 'All attention' : type === 'pending' ? 'Awaiting settlement' : type}
-            </option>
-          ))}
+          {exceptionTypes.map((type) => {
+            const label =
+              type === 'all' ? 'All attention' : type === 'pending' ? 'Awaiting settlement' : type;
+            return (
+              <option key={type} value={type}>
+                {label}
+              </option>
+            );
+          })}
         </Select>
         <Select
           aria-label="Attention sorting"

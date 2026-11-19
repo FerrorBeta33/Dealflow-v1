@@ -1,6 +1,5 @@
 import { metricDefinitions } from '../../../shared/command-center.js';
 import { dataCte, scope, metadata, readyPredicate, missingDocuments } from './analytics-query.js';
-
 export const metricSources = {
   stock: ['vehicle_data', '1=1'],
   bookingsCreated: ['booking_data', '1=1', undefined, 'created_at'],
@@ -16,12 +15,18 @@ export const metricSources = {
   paymentBlocked: ['order_data', "status = 'open' AND outstanding > 0"],
   documentBlocked: ['order_data', `status = 'open' AND outstanding = 0 AND ${missingDocuments}`],
   delivered: ['order_data', "status = 'delivered'", undefined, 'delivered_at'],
-  aged30: ['vehicle_data', "status = 'available' AND julianday(?) - julianday(created_at) >= 30"],
-  aged45: ['vehicle_data', "status = 'available' AND julianday(?) - julianday(created_at) >= 45"],
+  aged30: [
+    'vehicle_data',
+    "status = 'available' AND (EXTRACT(EPOCH FROM (?::timestamptz - created_at))/86400.0) >= 30",
+  ],
+  aged45: [
+    'vehicle_data',
+    "status = 'available' AND (EXTRACT(EPOCH FROM (?::timestamptz - created_at))/86400.0) >= 45",
+  ],
   cycle: [
     'order_data',
     "status = 'delivered' AND delivered_at >= booking_at",
-    'AVG(julianday(delivered_at) - julianday(booking_at))',
+    'AVG((EXTRACT(EPOCH FROM (delivered_at::timestamptz - booking_at))/86400.0))',
     'delivered_at',
   ],
   paidOrders: ['order_data', "status = 'open' AND outstanding = 0"],
@@ -39,15 +44,15 @@ export function metricCondition(metric, input) {
   }
   return { source, where, args, aggregate, dateColumn };
 }
-export function metricValues(db, input) {
+export async function metricValues(db, input) {
   const args = [];
   const selects = metricDefinitions.map((definition) => {
     const spec = metricCondition(definition.id, input);
     args.push(...spec.args);
-    return `(SELECT json_object('value', ${spec.aggregate}, 'records', COUNT(*))
-      FROM ${spec.source} data WHERE ${spec.where}) AS ${definition.id}`;
+    return `(SELECT json_build_object('value', ${spec.aggregate}, 'records', COUNT(*))::text
+      FROM ${spec.source} data WHERE ${spec.where}) AS "${definition.id}"`;
   });
-  const row = db.prepare(`${dataCte} SELECT ${selects.join(',')}`).get(...args);
+  const row = await db.prepare(`${dataCte} SELECT ${selects.join(',')}`).get(...args);
   return metricDefinitions.map((definition) => {
     const result = JSON.parse(row[definition.id]);
     return {
@@ -59,7 +64,7 @@ export function metricValues(db, input) {
     };
   });
 }
-export function branchComparison(db, input) {
+export async function branchComparison(db, input) {
   const vehicleScope = scope(input);
   const args = [
     ...vehicleScope.args,
@@ -69,13 +74,13 @@ export function branchComparison(db, input) {
     ...vehicleScope.args,
   ];
   const sql = `${dataCte}, inventory AS (
-    SELECT branch_id, SUM(status = 'available') AS available FROM vehicle_data data
+    SELECT branch_id, SUM(CASE WHEN status = 'available' THEN 1 ELSE 0 END) AS available FROM vehicle_data data
     WHERE ${vehicleScope.sql} GROUP BY branch_id
   ), work AS (
-    SELECT branch_id, SUM(status = 'open') AS orders,
+    SELECT branch_id, SUM(CASE WHEN status = 'open' THEN 1 ELSE 0 END) AS orders,
       SUM(CASE WHEN status = 'open' THEN outstanding ELSE 0 END) AS outstanding,
       SUM(CASE WHEN ${readyPredicate} THEN 1 ELSE 0 END) AS ready,
-      SUM(status = 'delivered' AND delivered_at >= ? AND delivered_at < ?) AS delivered
+      SUM(CASE WHEN status = 'delivered' AND delivered_at >= ? AND delivered_at < ? THEN 1 ELSE 0 END) AS delivered
     FROM order_data data WHERE ${vehicleScope.sql} GROUP BY branch_id
   ), demand AS (
     SELECT branch_id, COUNT(*) AS bookings FROM booking_data data
@@ -89,11 +94,11 @@ export function branchComparison(db, input) {
     ORDER BY ${['outstanding', 'available', 'ready'].includes(input.sort) ? input.sort + ' DESC' : 'br.name ASC'}, br.id
     LIMIT 100`;
   if (input.branch_id) args.push(input.branch_id);
-  return db.prepare(sql).all(...args);
+  return await db.prepare(sql).all(...args);
 }
-export function activity(db, input) {
+export async function activity(db, input) {
   const scoped = scope(input);
-  return db
+  return await db
     .prepare(
       `${dataCte}, events AS (
     SELECT 'booking-' || id AS event_id, 'Booking ' || status AS title,
@@ -113,12 +118,12 @@ export function activity(db, input) {
     )
     .all(...scoped.args, input.from, input.to);
 }
-export function summary(db, input) {
-  return db.transaction(() => ({
+export async function summary(db, input) {
+  return await db.transaction(async () => ({
     ...metadata(input),
-    metrics: metricValues(db, input),
-    branches: branchComparison(db, input),
-    events: activity(db, input),
+    metrics: await metricValues(db, input),
+    branches: await branchComparison(db, input),
+    events: await activity(db, input),
     activityNote:
       'Latest recorded entity milestones, not a complete audit trail. Period applies to this feed.',
     cohortNote: 'Booking conversion rate unavailable: cohort maturity rules are not defined.',

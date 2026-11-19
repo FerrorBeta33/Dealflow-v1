@@ -41,9 +41,9 @@ test('FR-06–09: competing reservations/conversions, cancellation, immutable ba
   const order = converts.find((result) => result.status === 201).data;
   assert.equal(order.total, vehicle.base_price + 30000);
   assert.equal((await api(`/bookings/${booking.id}/cancel`, { method: 'POST' })).status, 409);
-  db.prepare('UPDATE vehicle_models SET base_price = base_price + 900000 WHERE id = ?').run(
-    vehicle.model_id,
-  );
+  await db
+    .prepare('UPDATE vehicle_models SET base_price = base_price + 900000 WHERE id = ?')
+    .run(vehicle.model_id);
   assert.equal((await api(`/orders/${order.id}`)).data.invoice.amount, order.total);
   const html = await api(`/orders/${order.id}/invoice`, { raw: true });
   assert.equal(html.status, 200);
@@ -102,11 +102,13 @@ test('FR-10–11: pending caps, cancellation, role restrictions, concurrent sett
   assert.equal((await api(`/payments/${payment.id}/cancel`, { method: 'POST' })).status, 409);
   assert.equal((await api(`/orders/${order.id}`)).data.outstanding, 0);
   assert.equal(
-    db
-      .prepare(
-        "SELECT SUM(amount) AS total FROM payment_requests WHERE order_id = ? AND status = 'paid'",
-      )
-      .get(order.id).total,
+    (
+      await db
+        .prepare(
+          "SELECT SUM(amount) AS total FROM payment_requests WHERE order_id = ? AND status = 'paid'",
+        )
+        .get(order.id)
+    ).total,
     order.total,
   );
   assert.equal((await api(`${path}?status=paid`)).data.total, 1);
@@ -181,7 +183,7 @@ test('FR-12–14: complete document/delivery gates, file access, review and sold
   );
   assert.equal((await deliver()).status, 200);
   assert.equal(
-    db.prepare('SELECT status FROM vehicles WHERE id = ?').get(vehicle.id).status,
+    (await db.prepare('SELECT status FROM vehicles WHERE id = ?').get(vehicle.id)).status,
     'sold',
   );
   assert.equal((await deliver()).status, 409);

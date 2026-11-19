@@ -1,0 +1,16 @@
+.git
+.revolte
+**/node_modules
+**/dist
+**/coverage
+.data
+.data-showcase
+.env
+.env.*
+*.log
+**/*.tsbuildinfo
+core
+core.*
+*.heapsnapshot
+report.*.json
+isolate-*.log

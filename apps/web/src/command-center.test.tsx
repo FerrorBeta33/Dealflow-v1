@@ -70,9 +70,11 @@ function mount(role: string, entries = ['/']) {
 test('real SQLite KPI drilldown, exact full list and contextual return preserve branch and period', async () => {
   const user = userEvent.setup();
   mount('admin', ['/?branch_id=1&period=7d']);
-  const count = context.db
-    .prepare("SELECT COUNT(*) AS count FROM vehicles WHERE branch_id=1 AND status='available'")
-    .get().count;
+  const count = (
+    await context.db
+      .prepare("SELECT COUNT(*) AS count FROM vehicles WHERE branch_id=1 AND status='available'")
+      .get()
+  ).count;
   const metric = await screen.findByRole('button', {
     name: new RegExp(`^Available vehicles: ${count}\\.`),
   });
@@ -120,7 +122,7 @@ test('overview alias and browser history restore URL-owned filters instead of re
 test('expired bearer sessions clear private analytics and return to employee login', async () => {
   const client = mount('admin');
   await screen.findByRole('button', { name: /^Available vehicles:/ });
-  context.db
+  await context.db
     .prepare(
       "UPDATE sessions SET expires_at=0 WHERE employee_id=(SELECT id FROM employees WHERE role='admin')",
     )

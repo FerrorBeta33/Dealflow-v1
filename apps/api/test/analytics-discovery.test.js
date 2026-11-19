@@ -2,11 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import { fixture } from './helpers.js';
-
 await mkdir('.data', { recursive: true });
 test('Command Center: stock distributions, model search/paging and record ages use complete scoped data', async (t) => {
   const { api, db } = await fixture(t);
-  db.prepare("UPDATE vehicles SET created_at='2026-01-01T00:00:00.000Z' WHERE id=4").run();
+  await db.prepare("UPDATE vehicles SET created_at='2026-01-01T00:00:00.000Z' WHERE id=4").run();
   const stock = (await api('/analytics/stock?limit=2')).data;
   assert.equal(
     stock.distribution.reduce((sum, item) => sum + item.count, 0),
@@ -19,9 +18,11 @@ test('Command Center: stock distributions, model search/paging and record ages u
   assert.ok(scoped.distribution.every((item) => item.status === 'available'));
   assert.equal(
     scoped.distribution.reduce((sum, item) => sum + item.count, 0),
-    db
-      .prepare("SELECT COUNT(*) AS count FROM vehicles WHERE branch_id=1 AND status='available'")
-      .get().count,
+    (
+      await db
+        .prepare("SELECT COUNT(*) AS count FROM vehicles WHERE branch_id=1 AND status='available'")
+        .get()
+    ).count,
   );
   assert.ok(
     (await api('/analytics/exceptions?type=aging')).data.items.some(
@@ -34,14 +35,15 @@ test('Command Center: stock distributions, model search/paging and record ages u
   assert.equal((await api('/analytics/stock?q=Nexon')).data.models.total, 1);
   assert.equal((await api('/analytics/stock?q=NotAModel')).data.models.total, 0);
 });
-
 test('Command Center: events respect independent timestamps, exclusive boundaries and IST buckets', async (t) => {
   const { api, db } = await fixture(t);
-  db.prepare("UPDATE bookings SET created_at='2026-01-02T18:29:59.000Z' WHERE id=1").run();
-  db.prepare("UPDATE orders SET created_at='2026-01-02T18:30:00.000Z' WHERE id=1").run();
-  db.prepare(
-    "UPDATE payment_requests SET settled_at='2026-01-03T18:30:00.000Z' WHERE status='paid'",
-  ).run();
+  await db.prepare("UPDATE bookings SET created_at='2026-01-02T18:29:59.000Z' WHERE id=1").run();
+  await db.prepare("UPDATE orders SET created_at='2026-01-02T18:30:00.000Z' WHERE id=1").run();
+  await db
+    .prepare(
+      "UPDATE payment_requests SET settled_at='2026-01-03T18:30:00.000Z' WHERE status='paid'",
+    )
+    .run();
   const range = 'from=2026-01-02T18:30:00.000Z&to=2026-01-03T18:30:00.000Z';
   const summary = (await api(`/analytics/summary?${range}`)).data;
   const value = (id) => summary.metrics.find((item) => item.id === id).value;
@@ -61,10 +63,9 @@ test('Command Center: events respect independent timestamps, exclusive boundarie
   assert.equal(weekly.points[0].bucket, '2025-12-29');
   assert.equal((await api('/analytics/journeys/1?branch_id=1')).status, 404);
 });
-
 test('Command Center: federated search is bounded, scoped, linked and exposes no credentials or document storage paths', async (t) => {
   const { api, db } = await fixture(t);
-  const vin = db.prepare('SELECT vin FROM vehicles WHERE id=1').get().vin;
+  const vin = (await db.prepare('SELECT vin FROM vehicles WHERE id=1').get()).vin;
   const search = (await api(`/analytics/search?q=${vin}`)).data;
   assert.ok(search.items.some((item) => item.entity === 'vehicles' && item.href === '/vehicles/1'));
   assert.ok(search.items.length <= 20);
