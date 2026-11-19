@@ -6,7 +6,11 @@ import { pathToFileURL } from 'node:url';
 import { openDatabase, dataRoot } from './db.js';
 import { apiRoutes } from './routes.js';
 
-export function createApp(db, uploadRoot = resolve(dataRoot, 'uploads')) {
+export function createApp(
+  db,
+  uploadRoot = resolve(dataRoot, 'uploads'),
+  webRoot = process.env.NODE_ENV === 'production' ? resolve('apps/web/dist') : undefined,
+) {
   const app = express();
   app.disable('x-powered-by');
   app.use(
@@ -22,17 +26,27 @@ export function createApp(db, uploadRoot = resolve(dataRoot, 'uploads')) {
     response.set('Cache-Control', 'no-store');
     next();
   });
+  app.get('/health', (_request, response) => {
+    db.prepare('SELECT 1').get();
+    response.json({ status: 'ok' });
+  });
   app.use('/api', apiRoutes(db, uploadRoot));
+  app.use('/api', (_request, response) => response.status(404).json({ error: 'Route not found' }));
+  if (webRoot) {
+    app.use(express.static(webRoot, { dotfiles: 'deny', index: false }));
+    app.get('/{*path}', (request, response, next) => {
+      if (!request.accepts('html') || /\.[^/]+$/.test(request.path)) return next();
+      response.sendFile('index.html', { root: webRoot });
+    });
+  }
   app.use((request, response) => response.status(404).json({ error: 'Route not found' }));
   app.use((error, request, response, next) => {
     if (response.headersSent) return next(error);
     if (error instanceof ZodError)
-      return response
-        .status(400)
-        .json({
-          error: 'Please correct the highlighted fields',
-          fields: error.flatten().fieldErrors,
-        });
+      return response.status(400).json({
+        error: 'Please correct the highlighted fields',
+        fields: error.flatten().fieldErrors,
+      });
     if (error.code === 'LIMIT_FILE_SIZE')
       return response.status(413).json({ error: 'Maximum file size is 4 MB' });
     if (error.name === 'MulterError')
@@ -45,11 +59,9 @@ export function createApp(db, uploadRoot = resolve(dataRoot, 'uploads')) {
       return response.status(409).json({ error: 'Another change is in progress. Please retry.' });
     const status = error.status || (error.type === 'entity.parse.failed' ? 400 : 500);
     if (status >= 500) console.error(error);
-    response
-      .status(status)
-      .json({
-        error: status >= 500 ? 'Could not complete the request. Please retry.' : error.message,
-      });
+    response.status(status).json({
+      error: status >= 500 ? 'Could not complete the request. Please retry.' : error.message,
+    });
   });
   return app;
 }

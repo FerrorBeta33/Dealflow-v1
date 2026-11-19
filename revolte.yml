@@ -1,0 +1,75 @@
+# Preview is the initial deployment target; branch-based environments are scaffolding only.
+# SQLite records and uploaded documents require confirmed durable storage before real use.
+# Do not launch production or multiple replicas with container-local SQLite/uploads.
+revolte:
+  version: '1'
+  project: DealerFlow
+  appName: dealerflow
+  env:
+    preview:
+      services:
+        rid_1:
+          type: WEB_SERVICE
+          name: dealerflow
+          entryPoint: apps/api/server.js
+          properties:
+            health: /health
+            port: 8080
+            loadBalancerMode: shared
+            variables:
+              NODE_ENV: production
+              API_PORT: '8080'
+              DATA_DIR: /app/.data
+          specifications:
+            cpu: 2
+            memory: 2
+            storage: 30
+    qa:
+      branch: qa
+      services:
+        rid_1:
+          type: WEB_SERVICE
+          name: dealerflow
+          entryPoint: apps/api/server.js
+          properties:
+            health: /health
+            port: 8080
+            loadBalancerMode: shared
+          specifications:
+            cpu: 2
+            memory: 2
+            storage: 30
+    staging:
+      branch: staging
+      services:
+        rid_1:
+          type: WEB_SERVICE
+          name: dealerflow
+          entryPoint: apps/api/server.js
+          properties:
+            health: /health
+            port: 8080
+            loadBalancerMode: shared
+          specifications:
+            cpu: 2
+            memory: 2
+            storage: 30
+    production:
+      branch: main
+      services:
+        rid_1:
+          type: WEB_SERVICE
+          name: dealerflow
+          entryPoint: apps/api/server.js
+          properties:
+            health: /health
+            port: 8080
+            loadBalancerMode: shared
+          specifications:
+            cpu: 2
+            memory: 2
+            storage: 50
+            autoScaling:
+              replica:
+                min: 1
+                max: 3
