@@ -1,0 +1,38 @@
+{
+  "name": "dealerflow",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "workspaces": [
+    "apps/web"
+  ],
+  "scripts": {
+    "dev": "node scripts/dev.js",
+    "seed": "node apps/api/seed.js",
+    "seed:showcase": "node apps/api/showcase.js",
+    "assets:vehicles": "node scripts/generate-vehicle-art.js",
+    "type-check": "tsc --noEmit -p apps/web/tsconfig.json",
+    "lint": "eslint .",
+    "test": "node --test apps/api/test/*.test.js && vitest run --config apps/web/vite.config.ts",
+    "build": "npm run build --workspace apps/web",
+    "format": "prettier --write . --ignore-path .gitignore"
+  },
+  "dependencies": {
+    "better-sqlite3": "latest",
+    "express": "latest",
+    "helmet": "latest",
+    "multer": "latest",
+    "zod": "latest"
+  },
+  "devDependencies": {
+    "@eslint/js": "latest",
+    "eslint": "latest",
+    "globals": "latest",
+    "prettier": "latest",
+    "sharp": "^0.35.5",
+    "typescript-eslint": "latest"
+  }
+}

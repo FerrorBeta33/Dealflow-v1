@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" width="640" height="360" role="img" aria-label="Representative generic vehicle illustration">
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0.6" y2="1"><stop stop-color="#c7d5dc"/><stop offset="1" stop-color="#7c929f"/></linearGradient>
+    <linearGradient id="glass" x2="0.8" y2="1"><stop stop-color="#a5c5d9"/><stop offset="1" stop-color="#233b50"/></linearGradient>
+    <linearGradient id="rim" x2="1" y2="1"><stop stop-color="#edf3f7"/><stop offset="1" stop-color="#718b9e"/></linearGradient>
+  </defs>
+  <ellipse cx="326" cy="286" rx="248" ry="17" fill="#172d43" opacity=".08"/>
+  <path d="M89 221 110 186 185 173 238 116Q249 105 274 104L401 109Q422 111 438 130L478 174 547 193Q562 198 566 216L561 251 532 261 118 258 86 246Z" fill="url(#body)" stroke="#7c929f" stroke-width="2"/>
+  <path d="m201 174 48-53q5-5 21-5l116 4q17 1 28 16l30 37z" fill="url(#glass)"/>
+  <path d="m302 119-4 53m90-50 16 51" fill="none" stroke="#7c929f" stroke-width="9"/>
+  <path d="m183 184 272 1 41 17-325 2z" fill="#fff" opacity=".26"/>
+  <path d="M108 212 91 230l27 10h413l30-12-2 20-29 13H118l-32-16z" fill="#7c929f" opacity=".9"/>
+  <path d="M120 218h43m328-9 54 13" stroke="#f4fafc" stroke-width="9" stroke-linecap="round"/>
+  <path d="m206 184-5 56m115-56v58m116-57 19 54" fill="none" stroke="#7c929f" stroke-width="2" opacity=".45"/>
+  <path d="M283 191h16m101 1h16" stroke="#e1edf3" stroke-width="4" stroke-linecap="round"/>
+  <path d="M431 167h25q8 0 9 7l-3 7h-23z" fill="#7c929f"/>
+  <path d="M141 258a47 47 0 0 1 94 0m205 0a47 47 0 0 1 94 0" fill="#183144"/>
+  <g fill="#152b3b" stroke="#344d5d" stroke-width="4"><circle cx="188" cy="255" r="38"/><circle cx="486" cy="255" r="38"/></g>
+  <g fill="url(#rim)" stroke="#e7f0f5" stroke-width="2"><circle cx="188" cy="255" r="25"/><circle cx="486" cy="255" r="25"/></g>
+  <g stroke="#536f82" stroke-width="5"><path d="m188 233 0 44m-22-22h44m260 0h44m-22-22v44"/></g>
+  <g fill="#c4d6df"><circle cx="188" cy="255" r="8"/><circle cx="486" cy="255" r="8"/></g>
+  <path d="M88 300h477" stroke="#cad8e2" stroke-width="1"/>
+</svg>

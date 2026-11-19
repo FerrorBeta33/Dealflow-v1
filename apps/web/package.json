@@ -1,0 +1,34 @@
+{
+  "name": "@dealerflow/web",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 4173",
+    "build": "tsc --noEmit && vite build"
+  },
+  "dependencies": {
+    "react": "latest",
+    "react-dom": "latest",
+    "react-router-dom": "latest",
+    "@tanstack/react-query": "latest",
+    "lucide-react": "latest",
+    "@fontsource/inter": "latest"
+  },
+  "devDependencies": {
+    "vite": "latest",
+    "@vitejs/plugin-react": "latest",
+    "typescript": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "@types/node": "latest",
+    "tailwindcss": "latest",
+    "@tailwindcss/vite": "latest",
+    "vitest": "latest",
+    "jsdom": "latest",
+    "@testing-library/react": "latest",
+    "@testing-library/user-event": "latest",
+    "@testing-library/jest-dom": "latest",
+    "eslint-plugin-react-hooks": "latest"
+  }
+}

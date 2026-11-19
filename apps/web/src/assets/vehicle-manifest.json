@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "license": "CC0-1.0",
+  "source": "Original generic vehicle illustration created for the fictional DealerFlow demo.",
+  "attribution": "DealerFlow demo artwork. No manufacturer affiliation or exact model/variant representation.",
+  "representative": true,
+  "assets": {
+    "Tata Nexon · Fearless Plus": {
+      "src": "/vehicle-art/nexon.webp",
+      "fallback": "/vehicle-art/nexon.svg",
+      "width": 640,
+      "height": 360,
+      "verifiedSpecificModel": false
+    },
+    "Mahindra XUV700 · AX7": {
+      "src": "/vehicle-art/xuv700.webp",
+      "fallback": "/vehicle-art/xuv700.svg",
+      "width": 640,
+      "height": 360,
+      "verifiedSpecificModel": false
+    },
+    "Hyundai Creta · SX Tech": {
+      "src": "/vehicle-art/creta.webp",
+      "fallback": "/vehicle-art/creta.svg",
+      "width": 640,
+      "height": 360,
+      "verifiedSpecificModel": false
+    },
+    "Maruti Suzuki Grand Vitara · Alpha Plus": {
+      "src": "/vehicle-art/vitara.webp",
+      "fallback": "/vehicle-art/vitara.svg",
+      "width": 640,
+      "height": 360,
+      "verifiedSpecificModel": false
+    },
+    "Tata Punch EV · Empowered Plus": {
+      "src": "/vehicle-art/punch.webp",
+      "fallback": "/vehicle-art/punch.svg",
+      "width": 640,
+      "height": 360,
+      "verifiedSpecificModel": false
+    },
+    "Toyota Innova Hycross · ZX": {
+      "src": "/vehicle-art/hycross.webp",
+      "fallback": "/vehicle-art/hycross.svg",
+      "width": 640,
+      "height": 360,
+      "verifiedSpecificModel": false
+    },
+    "fallback": {
+      "src": "/vehicle-art/neutral.webp",
+      "fallback": "/vehicle-art/neutral.svg",
+      "width": 640,
+      "height": 360,
+      "verifiedSpecificModel": false
+    }
+  }
+}
